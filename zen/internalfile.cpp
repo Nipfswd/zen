@@ -2,7 +2,11 @@
 
 #include "internalfile.h"
 
+#include <zencore/filesystem.h>
+#include <zencore/fmtutils.h>
 #include <zencore/windows.h>
+
+#include <spdlog/spdlog.h>
 
 #include <gsl/gsl-lite.hpp>
 
@@ -120,21 +124,23 @@ FileBufferManager::ReturnBuffer(zen::IoBuffer Buffer)
 
 //////////////////////////////////////////////////////////////////////////
 
+using namespace fmt::literals;
+
 InternalFile::InternalFile()
 {
 }
 
 InternalFile::~InternalFile()
 {
-	if (m_memory)
-		_aligned_free(m_memory);
+	if (m_Memory)
+		_aligned_free(m_Memory);
 }
 
 size_t
 InternalFile::GetFileSize()
 {
 	ULONGLONG sz;
-	m_file.GetSize(sz);
+	m_File.GetSize(sz);
 
 	return size_t(sz);
 }
@@ -144,11 +150,11 @@ InternalFile::OpenWrite(std::filesystem::path FileName, bool IsCreate)
 {
 	const DWORD dwCreationDisposition = IsCreate ? CREATE_ALWAYS : OPEN_EXISTING;
 
-	HRESULT hRes = m_file.Create(FileName.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, dwCreationDisposition);
+	HRESULT hRes = m_File.Create(FileName.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, dwCreationDisposition);
 
 	if (FAILED(hRes))
 	{
-		throw std::system_error(GetLastError(), std::system_category(), "Failed to open file");
+		throw std::system_error(GetLastError(), std::system_category(), "Failed to open file for writing: '{}'"_format(FileName));
 	}
 }
 
@@ -157,30 +163,30 @@ InternalFile::OpenRead(std::filesystem::path FileName)
 {
 	const DWORD dwCreationDisposition = OPEN_EXISTING;
 
-	HRESULT hRes = m_file.Create(FileName.c_str(), GENERIC_READ, FILE_SHARE_READ, dwCreationDisposition);
+	HRESULT hRes = m_File.Create(FileName.c_str(), GENERIC_READ, FILE_SHARE_READ, dwCreationDisposition);
 
 	if (FAILED(hRes))
 	{
-		throw std::system_error(GetLastError(), std::system_category(), "Failed to open file");
+		throw std::system_error(GetLastError(), std::system_category(), "Failed to open file for reading: '{}'"_format(FileName));
 	}
 }
 
 const void*
 InternalFile::MemoryMapFile()
 {
-	auto fileSize = GetFileSize();
+	auto FileSize = GetFileSize();
 
-	if (fileSize > 100 * 1024 * 1024)
+	if (FileSize > 100 * 1024 * 1024)
 	{
-		m_mmap.MapFile(m_file);
+		m_Mmap.MapFile(m_File);
 
-		return m_mmap.GetData();
+		return m_Mmap.GetData();
 	}
 
-	m_memory = _aligned_malloc(fileSize, 64);
-	Read(m_memory, fileSize, 0);
+	m_Memory = _aligned_malloc(FileSize, 64);
+	Read(m_Memory, FileSize, 0);
 
-	return m_memory;
+	return m_Memory;
 }
 
 void
@@ -191,33 +197,34 @@ InternalFile::Read(void* Data, uint64_t Size, uint64_t Offset)
 	ovl.Offset	   = DWORD(Offset & 0xffff'ffffu);
 	ovl.OffsetHigh = DWORD(Offset >> 32);
 
-	HRESULT hRes = m_file.Read(Data, gsl::narrow<DWORD>(Size), &ovl);
+	HRESULT hRes = m_File.Read(Data, gsl::narrow<DWORD>(Size), &ovl);
 
 	if (FAILED(hRes))
 	{
-		throw std::system_error(GetLastError(), std::system_category(), "Failed to read from file" /* TODO: add context */);
+		throw std::system_error(GetLastError(),
+								std::system_category(),
+								"Failed to read from file '{}'"_format(zen::PathFromHandle(m_File)));
 	}
 }
 
 void
 InternalFile::Write(const void* Data, uint64_t Size, uint64_t Offset)
 {
-	OVERLAPPED ovl{};
+	OVERLAPPED Ovl{};
 
-	ovl.Offset	   = DWORD(Offset & 0xffff'ffffu);
-	ovl.OffsetHigh = DWORD(Offset >> 32);
+	Ovl.Offset	   = DWORD(Offset & 0xffff'ffffu);
+	Ovl.OffsetHigh = DWORD(Offset >> 32);
 
-	HRESULT hRes = m_file.Write(Data, gsl::narrow<DWORD>(Size), &ovl);
+	HRESULT hRes = m_File.Write(Data, gsl::narrow<DWORD>(Size), &Ovl);
 
 	if (FAILED(hRes))
 	{
-		throw std::system_error(GetLastError(), std::system_category(), "Failed to write to file" /* TODO: add context */);
+		throw std::system_error(GetLastError(), std::system_category(), "Failed to write to file '{}'"_format(zen::PathFromHandle(m_File)));
 	}
 }
 
 void
 InternalFile::Flush()
 {
-	m_file.Flush();
+	m_File.Flush();
 }
-

@@ -46,14 +46,13 @@ public:
 	void Write(const void* Data, uint64_t Size, uint64_t Offset);
 
 	void  Flush();
-	void* Handle() { return m_file; }
+	void* Handle() { return m_File; }
 
 	const void* MemoryMapFile();
 	size_t		GetFileSize();
 
 private:
-	CAtlFile			m_file;
-	CAtlFileMappingBase m_mmap;
-	void*				m_memory = nullptr;
+	CAtlFile			m_File;
+	CAtlFileMappingBase m_Mmap;
+	void*				m_Memory = nullptr;
 };
-

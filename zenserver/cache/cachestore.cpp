@@ -7,6 +7,7 @@
 #include <fmt/core.h>
 #include <spdlog/spdlog.h>
 #include <zencore/filesystem.h>
+#include <zencore/fmtutils.h>
 #include <zencore/iobuffer.h>
 #include <zencore/string.h>
 #include <zencore/thread.h>
@@ -18,6 +19,7 @@
 #include <atlfile.h>
 
 using namespace zen;
+using namespace fmt::literals;
 
 namespace UE {
 
@@ -720,7 +722,9 @@ ZenFile::Read(void* Data, uint64_t Size, uint64_t Offset)
 
 	if (FAILED(hRes))
 	{
-		throw std::system_error(GetLastError(), std::system_category(), "Failed to read from file" /* TODO: add context */);
+		throw std::system_error(GetLastError(),
+								std::system_category(),
+								"Failed to read from file '{}'"_format(zen::PathFromHandle(m_File)));
 	}
 }
 
@@ -736,7 +740,7 @@ ZenFile::Write(const void* Data, uint64_t Size, uint64_t Offset)
 
 	if (FAILED(hRes))
 	{
-		throw std::system_error(GetLastError(), std::system_category(), "Failed to write to file" /* TODO: add context */);
+		throw std::system_error(GetLastError(), std::system_category(), "Failed to write to file '{}'"_format(zen::PathFromHandle(m_File)));
 	}
 }
 
@@ -1233,4 +1237,3 @@ ZenCacheTracker::TrackAccess(std::string_view Bucket, const zen::IoHash& HashKey
 	ZEN_UNUSED(Bucket);
 	ZEN_UNUSED(HashKey);
 }
-

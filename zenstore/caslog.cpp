@@ -5,6 +5,8 @@
 #include "CompactCas.h"
 
 #include <zencore/except.h>
+#include <zencore/filesystem.h>
+#include <zencore/fmtutils.h>
 #include <zencore/memory.h>
 #include <zencore/string.h>
 #include <zencore/thread.h>
@@ -12,6 +14,7 @@
 
 #include <xxhash.h>
 
+#include <spdlog/spdlog.h>
 #include <gsl/gsl-lite.hpp>
 
 #include <functional>
@@ -23,6 +26,8 @@ struct IUnknown;  // Workaround for "combaseapi.h(229): error C2187: syntax erro
 //////////////////////////////////////////////////////////////////////////
 
 namespace zen {
+
+using namespace fmt::literals;
 
 uint32_t
 CasLogFile::FileHeader::ComputeChecksum()
@@ -49,7 +54,7 @@ CasLogFile::Open(std::filesystem::path FileName, size_t RecordSize, bool IsCreat
 
 	if (FAILED(hRes))
 	{
-		throw std::system_error(GetLastError(), std::system_category(), "Failed to open log file" /* TODO: add path */);
+		throw std::system_error(GetLastError(), std::system_category(), "Failed to open log file '{}'"_format(FileName));
 	}
 
 	uint64_t AppendOffset = 0;
@@ -135,7 +140,7 @@ CasLogFile::Append(const void* DataPointer, uint64_t DataSize)
 
 	if (FAILED(hRes))
 	{
-		throw std::system_error(GetLastError(), std::system_category(), "Failed to write to log file" /* TODO: add context */);
+		throw std::system_error(GetLastError(), std::system_category(), "Failed to write to log file '{}'"_format(zen::PathFromHandle(m_File)));
 	}
 }
 
@@ -156,7 +161,7 @@ CasBlobFile::Open(std::filesystem::path FileName, bool isCreate)
 
 	if (FAILED(hRes))
 	{
-		throw std::system_error(GetLastError(), std::system_category(), "Failed to open bucket sobs file");
+		throw std::system_error(GetLastError(), std::system_category(), "Failed to open bucket sobs file '{}'"_format(FileName));
 	}
 }
 
@@ -172,7 +177,7 @@ CasBlobFile::Read(void* Data, uint64_t Size, uint64_t Offset)
 
 	if (FAILED(hRes))
 	{
-		throw std::system_error(GetLastError(), std::system_category(), "Failed to read from file" /* TODO: add context */);
+		throw std::system_error(GetLastError(), std::system_category(), "Failed to read from file '{}'"_format(zen::PathFromHandle(m_File)));
 	}
 }
 
@@ -198,7 +203,7 @@ CasBlobFile::Write(const void* Data, uint64_t Size, uint64_t Offset)
 
 	if (FAILED(hRes))
 	{
-		throw std::system_error(GetLastError(), std::system_category(), "Failed to write to file" /* TODO: add context */);
+		throw std::system_error(GetLastError(), std::system_category(), "Failed to write to file '{}'"_format(zen::PathFromHandle(m_File)));
 	}
 }
 
@@ -218,4 +223,3 @@ CasBlobFile::FileSize()
 }
 
 }  // namespace zen
-
