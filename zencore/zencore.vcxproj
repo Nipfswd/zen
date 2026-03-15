@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>15.0</VCProjectVersion>
+    <ProjectGuid>{D75BF9AB-C61E-4FFF-AD59-1563430F05E2}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>zencore</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="..\zenfs_common.props" />
+    <Import Project="..\zen_base_debug.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="..\zenfs_common.props" />
+    <Import Project="..\zen_base_release.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <EnableMicrosoftCodeAnalysis>false</EnableMicrosoftCodeAnalysis>
+    <EnableClangTidyCodeAnalysis>true</EnableClangTidyCodeAnalysis>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <VcpkgEnableManifest>true</VcpkgEnableManifest>
+    <VcpkgUseStatic>true</VcpkgUseStatic>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <VcpkgEnableManifest>true</VcpkgEnableManifest>
+    <VcpkgUseStatic>true</VcpkgUseStatic>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>.\include;..\3rdparty\utfcpp\source</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+    <Lib />
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>.\include;..\3rdparty\utfcpp\source</AdditionalIncludeDirectories>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+    <Lib>
+      <Verbose>true</Verbose>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="include\zencore\atomic.h" />
+    <ClInclude Include="include\zencore\blake3.h" />
+    <ClInclude Include="include\zencore\enumflags.h" />
+    <ClInclude Include="include\zencore\except.h" />
+    <ClInclude Include="include\zencore\compress.h" />
+    <ClInclude Include="include\zencore\filesystem.h" />
+    <ClInclude Include="include\zencore\fmtutils.h" />
+    <ClInclude Include="include\zencore\httpclient.h" />
+    <ClInclude Include="include\zencore\httpserver.h" />
+    <ClInclude Include="include\zencore\intmath.h" />
+    <ClInclude Include="include\zencore\iohash.h" />
+    <ClInclude Include="include\zencore\md5.h" />
+    <ClInclude Include="include\zencore\memory.h" />
+    <ClInclude Include="include\zencore\refcount.h" />
+    <ClInclude Include="include\zencore\scopeguard.h" />
+    <ClInclude Include="include\zencore\sha1.h" />
+    <ClInclude Include="include\zencore\iobuffer.h" />
+    <ClInclude Include="include\zencore\sharedbuffer.h" />
+    <ClInclude Include="include\zencore\snapshot_manifest.h" />
+    <ClInclude Include="include\zencore\stats.h" />
+    <ClInclude Include="include\zencore\stream.h" />
+    <ClInclude Include="include\zencore\streamutil.h" />
+    <ClInclude Include="include\zencore\string.h" />
+    <ClInclude Include="include\zencore\targetver.h" />
+    <ClInclude Include="include\zencore\thread.h" />
+    <ClInclude Include="include\zencore\timer.h" />
+    <ClInclude Include="include\zencore\trace.h" />
+    <ClInclude Include="include\zencore\uid.h" />
+    <ClInclude Include="include\zencore\compactbinary.h" />
+    <ClInclude Include="include\zencore\compactbinarybuilder.h" />
+    <ClInclude Include="include\zencore\compactbinarypackage.h" />
+    <ClInclude Include="include\zencore\compactbinaryvalidation.h" />
+    <ClInclude Include="include\zencore\varint.h" />
+    <ClInclude Include="include\zencore\windows.h" />
+    <ClInclude Include="include\zencore\xxhash.h" />
+    <ClInclude Include="include\zencore\zencore.h" />
+    <ClInclude Include="iothreadpool.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="blake3.cpp" />
+    <ClCompile Include="compress.cpp" />
+    <ClCompile Include="except.cpp" />
+    <ClCompile Include="filesystem.cpp" />
+    <ClCompile Include="httpclient.cpp" />
+    <ClCompile Include="httpserver.cpp" />
+    <ClCompile Include="iohash.cpp" />
+    <ClCompile Include="iothreadpool.cpp" />
+    <ClCompile Include="md5.cpp" />
+    <ClCompile Include="memory.cpp" />
+    <ClCompile Include="refcount.cpp" />
+    <ClCompile Include="sha1.cpp">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">MaxSpeed</Optimization>
+      <InlineFunctionExpansion Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AnySuitable</InlineFunctionExpansion>
+      <IntrinsicFunctions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</IntrinsicFunctions>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="iobuffer.cpp" />
+    <ClCompile Include="sharedbuffer.cpp" />
+    <ClCompile Include="snapshot_manifest.cpp" />
+    <ClCompile Include="stats.cpp" />
+    <ClCompile Include="stream.cpp" />
+    <ClCompile Include="streamutil.cpp" />
+    <ClCompile Include="string.cpp" />
+    <ClCompile Include="thread.cpp" />
+    <ClCompile Include="timer.cpp" />
+    <ClCompile Include="trace.cpp" />
+    <ClCompile Include="uid.cpp" />
+    <ClCompile Include="compactbinary.cpp" />
+    <ClCompile Include="compactbinarybuilder.cpp" />
+    <ClCompile Include="compactbinarypackage.cpp" />
+    <ClCompile Include="compactbinaryvalidation.cpp" />
+    <ClCompile Include="xxhash.cpp" />
+    <ClCompile Include="zencore.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

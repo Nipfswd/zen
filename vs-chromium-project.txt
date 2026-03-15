@@ -1,0 +1,8 @@
+[SearchableFiles.include]
+*
+
+[SourceExplorer.ignore]
+.git/
+.x64/
+*.suo
+**/.x64/

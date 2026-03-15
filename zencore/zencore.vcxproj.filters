@@ -1,0 +1,78 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="include\zencore\intmath.h" />
+    <ClInclude Include="include\zencore\scopeguard.h" />
+    <ClInclude Include="include\zencore\sha1.h" />
+    <ClInclude Include="include\zencore\snapshot_manifest.h" />
+    <ClInclude Include="include\zencore\targetver.h" />
+    <ClInclude Include="include\zencore\zencore.h" />
+    <ClInclude Include="include\zencore\compactbinary.h" />
+    <ClInclude Include="include\zencore\uid.h" />
+    <ClInclude Include="include\zencore\trace.h" />
+    <ClInclude Include="include\zencore\compress.h" />
+    <ClInclude Include="include\zencore\timer.h" />
+    <ClInclude Include="include\zencore\thread.h" />
+    <ClInclude Include="include\zencore\string.h" />
+    <ClInclude Include="include\zencore\streamutil.h" />
+    <ClInclude Include="include\zencore\stream.h" />
+    <ClInclude Include="include\zencore\stats.h" />
+    <ClInclude Include="include\zencore\blake3.h" />
+    <ClInclude Include="include\zencore\atomic.h" />
+    <ClInclude Include="include\zencore\enumflags.h" />
+    <ClInclude Include="include\zencore\except.h" />
+    <ClInclude Include="include\zencore\filesystem.h" />
+    <ClInclude Include="include\zencore\httpserver.h" />
+    <ClInclude Include="include\zencore\refcount.h" />
+    <ClInclude Include="include\zencore\memory.h" />
+    <ClInclude Include="include\zencore\windows.h" />
+    <ClInclude Include="include\zencore\iobuffer.h" />
+    <ClInclude Include="include\zencore\sharedbuffer.h" />
+    <ClInclude Include="include\zencore\iohash.h" />
+    <ClInclude Include="include\zencore\compactbinarybuilder.h" />
+    <ClInclude Include="include\zencore\compactbinarypackage.h" />
+    <ClInclude Include="include\zencore\compactbinaryvalidation.h" />
+    <ClInclude Include="include\zencore\httpclient.h" />
+    <ClInclude Include="include\zencore\md5.h" />
+    <ClInclude Include="include\zencore\fmtutils.h" />
+    <ClInclude Include="include\zencore\xxhash.h" />
+    <ClInclude Include="iothreadpool.h" />
+    <ClInclude Include="include\zencore\varint.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="snapshot_manifest.cpp" />
+    <ClCompile Include="sha1.cpp" />
+    <ClCompile Include="zencore.cpp" />
+    <ClCompile Include="compactbinary.cpp" />
+    <ClCompile Include="uid.cpp" />
+    <ClCompile Include="blake3.cpp" />
+    <ClCompile Include="filesystem.cpp" />
+    <ClCompile Include="httpserver.cpp" />
+    <ClCompile Include="memory.cpp" />
+    <ClCompile Include="refcount.cpp" />
+    <ClCompile Include="stats.cpp" />
+    <ClCompile Include="stream.cpp" />
+    <ClCompile Include="streamutil.cpp" />
+    <ClCompile Include="string.cpp" />
+    <ClCompile Include="thread.cpp" />
+    <ClCompile Include="timer.cpp" />
+    <ClCompile Include="trace.cpp" />
+    <ClCompile Include="iobuffer.cpp" />
+    <ClCompile Include="sharedbuffer.cpp" />
+    <ClCompile Include="iohash.cpp" />
+    <ClCompile Include="compactbinarybuilder.cpp" />
+    <ClCompile Include="compactbinarypackage.cpp" />
+    <ClCompile Include="compactbinaryvalidation.cpp" />
+    <ClCompile Include="httpclient.cpp" />
+    <ClCompile Include="md5.cpp" />
+    <ClCompile Include="except.cpp" />
+    <ClCompile Include="xxhash.cpp" />
+    <ClCompile Include="iothreadpool.cpp" />
+    <ClCompile Include="compress.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CAS">
+      <UniqueIdentifier>{af5266fa-37a5-494c-9116-b15a3e6edd29}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

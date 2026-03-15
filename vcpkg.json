@@ -1,0 +1,31 @@
+{
+  "name": "zenfs",
+  "version-string": "0.1.0-dev",
+  "dependencies": [
+    "asio",
+    "curl",
+    "cpr",
+    "openssl",
+    "json11",
+    "mimalloc",
+    "spdlog",
+    "lz4",
+    "zstd",
+    "xxhash",
+    "gsl-lite",
+    "restinio",
+    "cxxopts",
+    "doctest",
+    "modp-base64",
+    "ryml",
+    "http-parser",
+    "lmdb",
+    "robin-map",
+    {
+      "name": "rocksdb",
+      "features": [ "lz4", "zstd" ]
+    },
+    "sol2",
+    "breakpad"
+  ]
+}

@@ -1,0 +1,1 @@
+vcpkg --x-manifest-root=%~dp0.. --triplet=x64-windows-static install

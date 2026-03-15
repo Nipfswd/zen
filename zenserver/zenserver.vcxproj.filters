@@ -1,0 +1,88 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="targetver.h" />
+    <ClInclude Include="projectstore.h" />
+    <ClInclude Include="casstore.h" />
+    <ClInclude Include="vfs.h" />
+    <ClInclude Include="testing\launch.h" />
+    <ClInclude Include="cache\cacheagent.h">
+      <Filter>cache</Filter>
+    </ClInclude>
+    <ClInclude Include="cache\cachestore.h">
+      <Filter>cache</Filter>
+    </ClInclude>
+    <ClInclude Include="cache\kvcache.h">
+      <Filter>cache</Filter>
+    </ClInclude>
+    <ClInclude Include="diag\diagsvcs.h">
+      <Filter>diag</Filter>
+    </ClInclude>
+    <ClInclude Include="admin\admin.h">
+      <Filter>admin</Filter>
+    </ClInclude>
+    <ClInclude Include="experimental\usnjournal.h">
+      <Filter>experimental</Filter>
+    </ClInclude>
+    <ClInclude Include="upstream\jupiter.h">
+      <Filter>upstream</Filter>
+    </ClInclude>
+    <ClInclude Include="upstream\zen.h">
+      <Filter>upstream</Filter>
+    </ClInclude>
+    <ClInclude Include="cache\structuredcache.h">
+      <Filter>cache</Filter>
+    </ClInclude>
+    <ClInclude Include="config.h" />
+    <ClInclude Include="diag\logging.h" />
+    <ClInclude Include="diag\crashreport.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="zenserver.cpp" />
+    <ClCompile Include="projectstore.cpp" />
+    <ClCompile Include="casstore.cpp" />
+    <ClCompile Include="vfs.cpp" />
+    <ClCompile Include="cache\cacheagent.cpp">
+      <Filter>cache</Filter>
+    </ClCompile>
+    <ClCompile Include="cache\cachestore.cpp">
+      <Filter>cache</Filter>
+    </ClCompile>
+    <ClCompile Include="experimental\usnjournal.cpp">
+      <Filter>experimental</Filter>
+    </ClCompile>
+    <ClCompile Include="testing\launch.cpp" />
+    <ClCompile Include="upstream\jupiter.cpp">
+      <Filter>upstream</Filter>
+    </ClCompile>
+    <ClCompile Include="upstream\zen.cpp">
+      <Filter>upstream</Filter>
+    </ClCompile>
+    <ClCompile Include="cache\structuredcache.cpp">
+      <Filter>cache</Filter>
+    </ClCompile>
+    <ClCompile Include="cache\kvcache.cpp">
+      <Filter>cache</Filter>
+    </ClCompile>
+    <ClCompile Include="config.cpp" />
+    <ClCompile Include="diag\logging.cpp" />
+    <ClCompile Include="diag\crashreport.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="cache">
+      <UniqueIdentifier>{98e47c47-6bbe-46f5-b7cd-4b54352d964e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="diag">
+      <UniqueIdentifier>{6a09a36e-fb5f-452a-ba0c-6d029240bad0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="admin">
+      <UniqueIdentifier>{f72f861e-fa14-4ff8-9338-f0f84f4a8389}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="experimental">
+      <UniqueIdentifier>{76916270-97a6-4ec8-b323-a95b6080e245}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="upstream">
+      <UniqueIdentifier>{303c28c2-3607-4ef4-89bd-e3618fe37e74}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

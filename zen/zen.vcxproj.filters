@@ -1,0 +1,48 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="chunk\chunk.cpp" />
+    <ClCompile Include="zen.cpp" />
+    <ClCompile Include="internalfile.cpp" />
+    <ClCompile Include="cmds\hash.cpp">
+      <Filter>cmds</Filter>
+    </ClCompile>
+    <ClCompile Include="cmds\dedup.cpp">
+      <Filter>cmds</Filter>
+    </ClCompile>
+    <ClCompile Include="cmds\deploy.cpp">
+      <Filter>cmds</Filter>
+    </ClCompile>
+    <ClCompile Include="cmds\copy.cpp">
+      <Filter>cmds</Filter>
+    </ClCompile>
+    <ClCompile Include="cmds\run.cpp">
+      <Filter>cmds</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="chunk\chunk.h" />
+    <ClInclude Include="zen.h" />
+    <ClInclude Include="internalfile.h" />
+    <ClInclude Include="cmds\hash.h">
+      <Filter>cmds</Filter>
+    </ClInclude>
+    <ClInclude Include="cmds\deploy.h">
+      <Filter>cmds</Filter>
+    </ClInclude>
+    <ClInclude Include="cmds\dedup.h">
+      <Filter>cmds</Filter>
+    </ClInclude>
+    <ClInclude Include="cmds\copy.h">
+      <Filter>cmds</Filter>
+    </ClInclude>
+    <ClInclude Include="cmds\run.h">
+      <Filter>cmds</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="cmds">
+      <UniqueIdentifier>{2e06a54c-52be-4260-9275-a4232d01a53c}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
