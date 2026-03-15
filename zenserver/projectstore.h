@@ -88,6 +88,7 @@ public:
 		const std::string& OplogId() const { return m_OplogId; }
 
 		const std::wstring& TempDir() const { return m_TempPath.native(); }
+		const std::filesystem::path& TempPath() const { return m_TempPath; }
 
 		spdlog::logger& Log() { return m_OuterProject->Log(); }
 

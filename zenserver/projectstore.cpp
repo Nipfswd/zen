@@ -1057,8 +1057,21 @@ HttpProjectService::HttpProjectService(CasStore& Store, ProjectStore* Projects)
 
 			IoBuffer Payload = HttpReq.ReadPayload();
 
+			CbPackage::AttachmentResolver Resolver = [&](const IoHash& Hash) -> SharedBuffer {
+				std::filesystem::path AttachmentPath = Log.TempPath() / Hash.ToHexString();
+
+				if (IoBuffer Data = IoBufferBuilder::MakeFromFile(AttachmentPath.native().c_str()))
+				{
+					return SharedBuffer::Clone(MemoryView(Data.Data(), Data.Size()));
+				}
+				else
+				{
+					return {};
+				}
+			};
+
 			CbPackage Package;
-			Package.Load(Payload);
+			Package.Load(Payload, &UniqueBuffer::Alloc, &Resolver);
 
 			CbObject Core = Package.GetObject();
 
@@ -1545,4 +1558,3 @@ LocalProjectService::~LocalProjectService()
 //////////////////////////////////////////////////////////////////////////
 
 }  // namespace zen
-

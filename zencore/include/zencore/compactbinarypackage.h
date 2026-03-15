@@ -1,306 +1,953 @@
 // Copyright Noah Games, Inc. All Rights Reserved.
 
-#pragma once
+#include "zencore/compactbinarypackage.h"
+#include <zencore/compactbinarybuilder.h>
+#include <zencore/compactbinaryvalidation.h>
+#include <zencore/endian.h>
+#include <zencore/stream.h>
+#include <zencore/trace.h>
 
-#include <zencore/zencore.h>
-
-#include <zencore/compactbinary.h>
-#include <zencore/iohash.h>
-
-#include <functional>
-#include <span>
+#include <doctest/doctest.h>
 
 namespace zen {
 
-class CbWriter;
-class BinaryReader;
-class BinaryWriter;
-class IoBuffer;
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+CbAttachment::CbAttachment(CbFieldIterator InValue, const IoHash* const InHash)
+{
+	if (InValue)
+	{
+		if (!InValue.IsOwned())
+		{
+			InValue = CbFieldIterator::CloneRange(InValue);
+		}
+
+		CompactBinary = CbFieldViewIterator(InValue);
+		Buffer		  = std::move(InValue).GetOuterBuffer();
+	}
+
+	if (InHash)
+	{
+		Hash = *InHash;
+		if (CompactBinary)
+		{
+			ZEN_ASSERT_SLOW(Hash == CompactBinary.GetRangeHash());
+		}
+		else
+		{
+#if 0
+			zenfs_assertSlow(Hash.IsZero(), TEXT("A null or empty field range must use a hash of zero."));
+#endif
+		}
+	}
+	else if (CompactBinary)
+	{
+		Hash = CompactBinary.GetRangeHash();
+	}
+}
+
+CbAttachment::CbAttachment(SharedBuffer InBuffer, const IoHash* const InHash) : Buffer(std::move(InBuffer))
+{
+	Buffer.MakeOwned();
+	if (InHash)
+	{
+		Hash = *InHash;
+		if (Buffer.GetSize())
+		{
+			ZEN_ASSERT_SLOW(Hash == IoHash::HashMemory(Buffer.GetData(), Buffer.GetSize()));
+		}
+		else
+		{
+			ZEN_ASSERT_SLOW(Hash == IoHash::Zero, TEXT("A null or empty buffer must use a hash of zero."));
+		}
+	}
+	else if (Buffer.GetSize())
+	{
+		Hash = IoHash::HashMemory(Buffer.GetData(), Buffer.GetSize());
+	}
+	else
+	{
+		Buffer.Reset();
+	}
+}
+
+SharedBuffer
+CbAttachment::AsBinaryView() const
+{
+	if (!CompactBinary)
+	{
+		return Buffer;
+	}
+
+	MemoryView SerializedView;
+	if (CompactBinary.TryGetSerializedRangeView(SerializedView))
+	{
+		return SerializedView == Buffer.GetView() ? Buffer : SharedBuffer::MakeView(SerializedView, Buffer);
+	}
+
+	return CbFieldIterator::CloneRange(CompactBinary).GetRangeBuffer();
+}
+
+CbFieldIterator
+CbAttachment::AsCompactBinary() const
+{
+	return CompactBinary ? CbFieldIterator::MakeRangeView(CompactBinary, Buffer) : CbFieldIterator();
+}
+
+void
+CbAttachment::Load(IoBuffer& InBuffer, BufferAllocator Allocator)
+{
+	MemoryInStream InStream(InBuffer.Data(), InBuffer.Size());
+	BinaryReader   Reader(InStream);
+
+	Load(Reader, Allocator);
+}
+
+void
+CbAttachment::Load(CbFieldIterator& Fields)
+{
+	ZEN_ASSERT(Fields.IsBinary());	//, TEXT("Attachments must start with a binary field."));
+	const MemoryView View = Fields.AsBinaryView();
+	if (View.GetSize() > 0)
+	{
+		Buffer = SharedBuffer::MakeView(View, Fields.GetOuterBuffer());
+		Buffer.MakeOwned();
+		++Fields;
+		Hash = Fields.AsAttachment();
+		ZEN_ASSERT(!Fields.HasError());	 // TEXT("Attachments must be a non-empty binary value with a content hash."));
+		if (Fields.IsCompactBinaryAttachment())
+		{
+			CompactBinary = CbFieldViewIterator::MakeRange(Buffer);
+		}
+		++Fields;
+	}
+	else
+	{
+		++Fields;
+		Buffer.Reset();
+		CompactBinary.Reset();
+		Hash = IoHash::Zero;
+	}
+}
+
+void
+CbAttachment::Load(BinaryReader& Reader, BufferAllocator Allocator)
+{
+	CbField BufferField = LoadCompactBinary(Reader, Allocator);
+	ZEN_ASSERT(BufferField.IsBinary(), "Attachments must start with a binary field");
+	const MemoryView View = BufferField.AsBinaryView();
+	if (View.GetSize() > 0)
+	{
+		Buffer = SharedBuffer::MakeView(View, BufferField.GetOuterBuffer());
+		Buffer.MakeOwned();
+		CompactBinary = CbFieldViewIterator();
+
+		std::vector<uint8_t> HashBuffer;
+		CbField				 HashField = LoadCompactBinary(Reader, [&HashBuffer](uint64_t Size) -> UniqueBuffer {
+			 HashBuffer.resize(Size);
+			 return UniqueBuffer::MakeView(HashBuffer.data(), Size);
+		 });
+		Hash						   = HashField.AsAttachment();
+		ZEN_ASSERT(!HashField.HasError(), "Attachments must be a non-empty binary value with a content hash.");
+		if (HashField.IsCompactBinaryAttachment())
+		{
+			CompactBinary = CbFieldViewIterator::MakeRange(Buffer);
+		}
+	}
+	else
+	{
+		Buffer.Reset();
+		CompactBinary.Reset();
+		Hash = IoHash::Zero;
+	}
+}
+
+void
+CbAttachment::Save(CbWriter& Writer) const
+{
+	if (CompactBinary)
+	{
+		MemoryView SerializedView;
+		if (CompactBinary.TryGetSerializedRangeView(SerializedView))
+		{
+			Writer.AddBinary(SerializedView);
+		}
+		else
+		{
+			Writer.AddBinary(AsBinaryView());
+		}
+		Writer.AddCompactBinaryAttachment(Hash);
+	}
+	else if (Buffer && Buffer.GetSize())
+	{
+		Writer.AddBinary(Buffer);
+		Writer.AddBinaryAttachment(Hash);
+	}
+	else  // Null
+	{
+		Writer.AddBinary(MemoryView());
+	}
+}
+
+void
+CbAttachment::Save(BinaryWriter& Writer) const
+{
+	CbWriter TempWriter;
+	Save(TempWriter);
+	TempWriter.Save(Writer);
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/**
- * An attachment is either binary or compact binary and is identified by its hash.
- *
- * A compact binary attachment is also a valid binary attachment and may be accessed as binary.
- *
- * Attachments are serialized as one or two compact binary fields with no name. A Binary field is
- * written first with its content. The content hash is omitted when the content size is zero, and
- * is otherwise written as a BinaryReference or CompactBinaryReference depending on the type.
- */
-class CbAttachment
+void
+CbPackage::SetObject(CbObject InObject, const IoHash* InObjectHash, AttachmentResolver* InResolver)
 {
-public:
-	/** Construct a null attachment. */
-	CbAttachment() = default;
+	if (InObject.CreateIterator())
+	{
+		Object = InObject.IsOwned() ? std::move(InObject) : CbObject::Clone(InObject);
+		if (InObjectHash)
+		{
+			ObjectHash = *InObjectHash;
+			ZEN_ASSERT_SLOW(ObjectHash == Object.GetHash());
+		}
+		else
+		{
+			ObjectHash = Object.GetHash();
+		}
+		if (InResolver)
+		{
+			GatherAttachments(Object.CreateIterator(), *InResolver);
+		}
+	}
+	else
+	{
+		Object.Reset();
+		ObjectHash = IoHash::Zero;
+	}
+}
 
-	/** Construct a compact binary attachment. Value is cloned if not owned. */
-	inline explicit CbAttachment(CbFieldIterator Value) : CbAttachment(std::move(Value), nullptr) {}
+void
+CbPackage::AddAttachment(const CbAttachment& Attachment, AttachmentResolver* Resolver)
+{
+	if (!Attachment.IsNull())
+	{
+		auto It = std::lower_bound(begin(Attachments), end(Attachments), Attachment);
+		if (It != Attachments.end() && *It == Attachment)
+		{
+			CbAttachment& Existing = *It;
+			if (Attachment.IsCompactBinary() && !Existing.IsCompactBinary())
+			{
+				Existing = CbAttachment(CbFieldIterator::MakeRange(Existing.AsBinaryView()));
+			}
+		}
+		else
+		{
+			Attachments.insert(It, Attachment);
+		}
 
-	/** Construct a compact binary attachment. Value is cloned if not owned. Hash must match Value. */
-	inline explicit CbAttachment(CbFieldIterator Value, const IoHash& Hash) : CbAttachment(std::move(Value), &Hash) {}
+		if (Attachment.IsCompactBinary() && Resolver)
+		{
+			GatherAttachments(Attachment.AsCompactBinary(), *Resolver);
+		}
+	}
+}
 
-	/** Construct a binary attachment. Value is cloned if not owned. */
-	inline explicit CbAttachment(SharedBuffer Value) : CbAttachment(std::move(Value), nullptr) {}
+int32_t
+CbPackage::RemoveAttachment(const IoHash& Hash)
+{
+	return gsl::narrow_cast<int32_t>(
+		std::erase_if(Attachments, [&Hash](const CbAttachment& Attachment) -> bool { return Attachment.GetHash() == Hash; }));
+}
 
-	/** Construct a binary attachment. Value is cloned if not owned. Hash must match Value. */
-	inline explicit CbAttachment(SharedBuffer Value, const IoHash& Hash) : CbAttachment(std::move(Value), &Hash) {}
+bool
+CbPackage::Equals(const CbPackage& Package) const
+{
+	return ObjectHash == Package.ObjectHash && Attachments == Package.Attachments;
+}
 
-	/** Reset this to a null attachment. */
-	inline void Reset() { *this = CbAttachment(); }
+const CbAttachment*
+CbPackage::FindAttachment(const IoHash& Hash) const
+{
+	auto It = std::find_if(begin(Attachments), end(Attachments), [&Hash](const CbAttachment& Attachment) -> bool {
+		return Attachment.GetHash() == Hash;
+	});
 
-	/** Whether the attachment has a value. */
-	inline explicit operator bool() const { return !IsNull(); }
+	if (It == end(Attachments))
+		return nullptr;
 
-	/** Whether the attachment has a value. */
-	inline bool IsNull() const { return !Buffer; }
+	return &*It;
+}
 
-	/** Access the attachment as binary. Defaults to a null buffer on error. */
-	ZENCORE_API SharedBuffer AsBinaryView() const;
+void
+CbPackage::GatherAttachments(const CbFieldViewIterator& Fields, AttachmentResolver Resolver)
+{
+	Fields.IterateRangeAttachments([this, &Resolver](CbFieldView Field) {
+		const IoHash& Hash = Field.AsAttachment();
 
-	/** Access the attachment as compact binary. Defaults to a field iterator with no value on error. */
-	ZENCORE_API CbFieldIterator AsCompactBinary() const;
+		if (SharedBuffer Buffer = Resolver(Hash))
+		{
+			if (Field.IsCompactBinaryAttachment())
+			{
+				AddAttachment(CbAttachment(CbFieldIterator::MakeRange(std::move(Buffer)), Hash), &Resolver);
+			}
+			else
+			{
+				AddAttachment(CbAttachment(std::move(Buffer), Hash));
+			}
+		}
+	});
+}
 
-	/** Returns whether the attachment is binary or compact binary. */
-	inline bool IsBinary() const { return !Buffer.IsNull(); }
+void
+CbPackage::Load(IoBuffer& InBuffer, BufferAllocator Allocator, AttachmentResolver* Mapper)
+{
+	MemoryInStream InStream(InBuffer.Data(), InBuffer.Size());
+	BinaryReader   Reader(InStream);
 
-	/** Returns whether the attachment is compact binary. */
-	inline bool IsCompactBinary() const { return CompactBinary.HasValue(); }
+	Load(Reader, Allocator, Mapper);
+}
 
-	/** Returns the hash of the attachment value. */
-	inline const IoHash& GetHash() const { return Hash; }
+void
+CbPackage::Load(CbFieldIterator& Fields)
+{
+	*this = CbPackage();
+	while (Fields)
+	{
+		if (Fields.IsNull())
+		{
+			++Fields;
+			break;
+		}
+		else if (Fields.IsBinary())
+		{
+			CbAttachment Attachment;
+			Attachment.Load(Fields);
+			AddAttachment(Attachment);
+		}
+		else
+		{
+			ZEN_ASSERT(Fields.IsObject(), TEXT("Expected Object, Binary, or Null field when loading a package."));
+			Object = Fields.AsObject();
+			Object.MakeOwned();
+			++Fields;
+			if (Object.CreateIterator())
+			{
+				ObjectHash = Fields.AsCompactBinaryAttachment();
+				ZEN_ASSERT(!Fields.HasError(), TEXT("Object must be followed by a CompactBinaryReference with the object hash."));
+				++Fields;
+			}
+			else
+			{
+				Object.Reset();
+			}
+		}
+	}
+}
 
-	/** Compares attachments by their hash. Any discrepancy in type must be handled externally. */
-	inline bool operator==(const CbAttachment& Attachment) const { return Hash == Attachment.Hash; }
-	inline bool operator!=(const CbAttachment& Attachment) const { return Hash != Attachment.Hash; }
-	inline bool operator<(const CbAttachment& Attachment) const { return Hash < Attachment.Hash; }
+void
+CbPackage::Load(BinaryReader& Reader, BufferAllocator Allocator, AttachmentResolver* Mapper)
+{
+	uint8_t	   StackBuffer[64];
+	const auto StackAllocator = [&Allocator, &StackBuffer](uint64_t Size) -> UniqueBuffer {
+		if (Size <= sizeof(StackBuffer))
+		{
+			return UniqueBuffer::MakeView(StackBuffer, Size);
+		}
 
-	/**
-	 * Load the attachment from compact binary as written by Save.
-	 *
-	 * The attachment references the input iterator if it is owned, and otherwise clones the value.
-	 *
-	 * The iterator is advanced as attachment fields are consumed from it.
-	 */
-	ZENCORE_API void Load(CbFieldIterator& Fields);
+		return Allocator(Size);
+	};
 
-	/**
-	 * Load the attachment from compact binary as written by Save.
-	 */
-	ZENCORE_API void Load(BinaryReader& Reader, BufferAllocator Allocator = UniqueBuffer::Alloc);
+	*this = CbPackage();
 
-	/**
-	 * Load the attachment from compact binary as written by Save.
-	 */
-	ZENCORE_API void Load(IoBuffer& Buffer, BufferAllocator Allocator = UniqueBuffer::Alloc);
+	for (;;)
+	{
+		CbField ValueField = LoadCompactBinary(Reader, StackAllocator);
+		if (ValueField.IsNull())
+		{
+			break;
+		}
+		else if (ValueField.IsBinary())
+		{
+			const MemoryView View = ValueField.AsBinaryView();
+			if (View.GetSize() > 0)
+			{
+				SharedBuffer Buffer = SharedBuffer::MakeView(View, ValueField.GetOuterBuffer());
+				Buffer.MakeOwned();
+				CbField		  HashField = LoadCompactBinary(Reader, StackAllocator);
+				const IoHash& Hash		= HashField.AsAttachment();
+				ZEN_ASSERT(!HashField.HasError(), "Attachments must be a non-empty binary value with a content hash.");
+				if (HashField.IsCompactBinaryAttachment())
+				{
+					AddAttachment(CbAttachment(CbFieldIterator::MakeRange(std::move(Buffer)), Hash));
+				}
+				else
+				{
+					AddAttachment(CbAttachment(std::move(Buffer), Hash));
+				}
+			}
+		}
+		else if (ValueField.IsHash())
+		{
+			const IoHash Hash = ValueField.AsHash();
 
-	/** Save the attachment into the writer as a stream of compact binary fields. */
-	ZENCORE_API void Save(CbWriter& Writer) const;
+			ZEN_ASSERT(Mapper);
 
-	/** Save the attachment into the writer as a stream of compact binary fields. */
-	ZENCORE_API void Save(BinaryWriter& Writer) const;
+			AddAttachment(CbAttachment((*Mapper)(Hash), Hash));
+		}
+		else
+		{
+			ZEN_ASSERT(ValueField.IsObject(), "Expected Object, Binary, or Null field when loading a package");
+			Object = ValueField.AsObject();
+			Object.MakeOwned();
+			if (Object.CreateViewIterator())
+			{
+				CbField HashField = LoadCompactBinary(Reader, StackAllocator);
+				ObjectHash		  = HashField.AsCompactBinaryAttachment();
+				ZEN_ASSERT(!HashField.HasError(), "Object must be followed by a CompactBinaryAttachment with the object hash.");
+			}
+			else
+			{
+				Object.Reset();
+			}
+		}
+	}
+}
 
-private:
-	ZENCORE_API CbAttachment(CbFieldIterator Value, const IoHash* Hash);
-	ZENCORE_API CbAttachment(SharedBuffer Value, const IoHash* Hash);
+void
+CbPackage::Save(CbWriter& Writer) const
+{
+	if (Object.CreateIterator())
+	{
+		Writer.AddObject(Object);
+		Writer.AddCompactBinaryAttachment(ObjectHash);
+	}
+	for (const CbAttachment& Attachment : Attachments)
+	{
+		Attachment.Save(Writer);
+	}
+	Writer.AddNull();
+}
 
-	/** An owned buffer containing the binary or compact binary data. */
-	SharedBuffer Buffer;
-	/** A field iterator that is valid only for compact binary attachments. */
-	CbFieldViewIterator CompactBinary;
-	/** A hash of the attachment value. */
-	IoHash Hash;
-};
+void
+CbPackage::Save(BinaryWriter& StreamWriter) const
+{
+	CbWriter Writer;
+	Save(Writer);
+	Writer.Save(StreamWriter);
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/**
- * A package is a compact binary object with attachments for its external references.
- *
- * A package is basically a Merkle tree with compact binary as its root and other non-leaf nodes,
- * and either binary or compact binary as its leaf nodes. A node references its child nodes using
- * BinaryHash or FieldHash fields in its compact binary representation.
- *
- * It is invalid for a package to include attachments that are not referenced by its object or by
- * one of its referenced compact binary attachments. When attachments are added explicitly, it is
- * the responsibility of the package creator to follow this requirement. Attachments that are not
- * referenced may not survive a round-trip through certain storage systems.
- *
- * It is valid for a package to exclude referenced attachments, but then it is the responsibility
- * of the package consumer to have a mechanism for resolving those references when necessary.
- *
- * A package is serialized as a sequence of compact binary fields with no name. The object may be
- * both preceded and followed by attachments. The object itself is written as an Object field and
- * followed by its hash in a CompactBinaryReference field when the object is non-empty. A package
- * ends with a Null field. The canonical order of components is the object and its hash, followed
- * by the attachments ordered by hash, followed by a Null field. It is valid for the a package to
- * have its components serialized in any order, provided there is at most one object and the null
- * field is written last.
- */
-class CbPackage
+void
+usonpackage_forcelink()
 {
-public:
-	/**
-	 * A function that resolves a hash to a buffer containing the data matching that hash.
-	 *
-	 * The resolver may return a null buffer to skip resolving an attachment for the hash.
-	 */
-	using AttachmentResolver = std::function<SharedBuffer(const IoHash& Hash)>;
+}
 
-	/** Construct a null package. */
-	CbPackage() = default;
+TEST_CASE("usonpackage")
+{
+	using namespace std::literals;
 
-	/**
-	 * Construct a package from a root object without gathering attachments.
-	 *
-	 * @param InObject The root object, which will be cloned unless it is owned.
-	 */
-	inline explicit CbPackage(CbObject InObject) { SetObject(std::move(InObject)); }
+	const auto TestSaveLoadValidate = [&](const char* Test, const CbAttachment& Attachment) {
+		ZEN_UNUSED(Test);
 
-	/**
-	 * Construct a package from a root object and gather attachments using the resolver.
-	 *
-	 * @param InObject The root object, which will be cloned unless it is owned.
-	 * @param InResolver A function that is invoked for every reference and binary reference field.
-	 */
-	inline explicit CbPackage(CbObject InObject, AttachmentResolver InResolver) { SetObject(std::move(InObject), InResolver); }
+		CbWriter Writer;
+		Attachment.Save(Writer);
+		CbFieldIterator Fields = Writer.Save();
 
-	/**
-	 * Construct a package from a root object without gathering attachments.
-	 *
-	 * @param InObject The root object, which will be cloned unless it is owned.
-	 * @param InObjectHash The hash of the object, which must match to avoid validation errors.
-	 */
-	inline explicit CbPackage(CbObject InObject, const IoHash& InObjectHash) { SetObject(std::move(InObject), InObjectHash); }
+		MemoryOutStream WriteStream;
+		BinaryWriter	StreamWriter{WriteStream};
+		Attachment.Save(StreamWriter);
 
-	/**
-	 * Construct a package from a root object and gather attachments using the resolver.
-	 *
-	 * @param InObject The root object, which will be cloned unless it is owned.
-	 * @param InObjectHash The hash of the object, which must match to avoid validation errors.
-	 * @param InResolver A function that is invoked for every reference and binary reference field.
-	 */
-	inline explicit CbPackage(CbObject InObject, const IoHash& InObjectHash, AttachmentResolver InResolver)
+		CHECK(MakeMemoryView(WriteStream).EqualBytes(Fields.GetRangeBuffer().GetView()));
+		CHECK(ValidateCompactBinaryRange(MakeMemoryView(WriteStream), CbValidateMode::All) == CbValidateError::None);
+		CHECK(ValidateCompactBinaryAttachment(MakeMemoryView(WriteStream), CbValidateMode::All) == CbValidateError::None);
+
+		CbAttachment FromFields;
+		FromFields.Load(Fields);
+		CHECK(!bool(Fields));
+		CHECK(FromFields == Attachment);
+
+		CbAttachment   FromArchive;
+		MemoryInStream InStream(MakeMemoryView(WriteStream));
+		BinaryReader   Reader(InStream);
+		FromArchive.Load(Reader);
+		CHECK(Reader.CurrentOffset() == InStream.Size());
+		CHECK(FromArchive == Attachment);
+	};
+
+	SUBCASE("Empty Attachment")
 	{
-		SetObject(std::move(InObject), InObjectHash, InResolver);
+		CbAttachment Attachment;
+		CHECK(Attachment.IsNull());
+		CHECK_FALSE(bool(Attachment));
+		CHECK_FALSE(bool(Attachment.AsBinaryView()));
+		CHECK_FALSE(Attachment.AsCompactBinary().HasValue());
+		CHECK_FALSE(Attachment.IsBinary());
+		CHECK_FALSE(Attachment.IsCompactBinary());
+		CHECK(Attachment.GetHash() == IoHash::Zero);
+		TestSaveLoadValidate("Null", Attachment);
 	}
 
-	/** Reset this to a null package. */
-	inline void Reset() { *this = CbPackage(); }
-
-	/** Whether the package has a non-empty object or attachments. */
-	inline explicit operator bool() const { return !IsNull(); }
-
-	/** Whether the package has an empty object and no attachments. */
-	inline bool IsNull() const { return !Object.CreateIterator() && Attachments.size() == 0; }
-
-	/** Returns the compact binary object for the package. */
-	inline const CbObject& GetObject() const { return Object; }
-
-	/** Returns the has of the compact binary object for the package. */
-	inline const IoHash& GetObjectHash() const { return ObjectHash; }
-
-	/**
-	 * Set the root object without gathering attachments.
-	 *
-	 * @param InObject The root object, which will be cloned unless it is owned.
-	 */
-	inline void SetObject(CbObject InObject) { SetObject(std::move(InObject), nullptr, nullptr); }
-
-	/**
-	 * Set the root object and gather attachments using the resolver.
-	 *
-	 * @param InObject The root object, which will be cloned unless it is owned.
-	 * @param InResolver A function that is invoked for every reference and binary reference field.
-	 */
-	inline void SetObject(CbObject InObject, AttachmentResolver InResolver) { SetObject(std::move(InObject), nullptr, &InResolver); }
-
-	/**
-	 * Set the root object without gathering attachments.
-	 *
-	 * @param InObject The root object, which will be cloned unless it is owned.
-	 * @param InObjectHash The hash of the object, which must match to avoid validation errors.
-	 */
-	inline void SetObject(CbObject InObject, const IoHash& InObjectHash) { SetObject(std::move(InObject), &InObjectHash, nullptr); }
-
-	/**
-	 * Set the root object and gather attachments using the resolver.
-	 *
-	 * @param InObject The root object, which will be cloned unless it is owned.
-	 * @param InObjectHash The hash of the object, which must match to avoid validation errors.
-	 * @param InResolver A function that is invoked for every reference and binary reference field.
-	 */
-	inline void SetObject(CbObject InObject, const IoHash& InObjectHash, AttachmentResolver InResolver)
+	SUBCASE("Binary Attachment")
 	{
-		SetObject(std::move(InObject), &InObjectHash, &InResolver);
+		const SharedBuffer Buffer = SharedBuffer::Clone(MakeMemoryView<uint8_t>({0, 1, 2, 3}));
+		CbAttachment	   Attachment(Buffer);
+		CHECK_FALSE(Attachment.IsNull());
+		CHECK(bool(Attachment));
+		CHECK(Attachment.AsBinaryView() == Buffer);
+		CHECK_FALSE(Attachment.AsCompactBinary().HasValue());
+		CHECK(Attachment.IsBinary());
+		CHECK_FALSE(Attachment.IsCompactBinary());
+		CHECK(Attachment.GetHash() == IoHash::HashMemory(Buffer));
+		TestSaveLoadValidate("Binary", Attachment);
 	}
 
-	/** Returns the attachments in this package. */
-	inline std::span<const CbAttachment> GetAttachments() const { return Attachments; }
+	SUBCASE("Compact Binary Attachment")
+	{
+		CbWriter Writer;
+		Writer << "Name"sv << 42;
+		CbFieldIterator Fields = Writer.Save();
+		CbAttachment	Attachment(Fields);
 
-	/**
-	 * Find an attachment by its hash.
-	 *
-	 * @return The attachment, or null if the attachment is not found.
-	 * @note The returned pointer is only valid until the attachments on this package are modified.
-	 */
-	ZENCORE_API const CbAttachment* FindAttachment(const IoHash& Hash) const;
+		CHECK_FALSE(Attachment.IsNull());
+		CHECK(bool(Attachment));
+		CHECK(Attachment.AsBinaryView() == Fields.GetRangeBuffer());
+		CHECK(Attachment.AsCompactBinary() == Fields);
+		CHECK(Attachment.IsBinary());
+		CHECK(Attachment.IsCompactBinary());
+		CHECK(Attachment.GetHash() == Fields.GetRangeHash());
+		TestSaveLoadValidate("CompactBinary", Attachment);
+	}
 
-	/** Find an attachment if it exists in the package. */
-	inline const CbAttachment* FindAttachment(const CbAttachment& Attachment) const { return FindAttachment(Attachment.GetHash()); }
+	SUBCASE("Binary View")
+	{
+		const uint8_t Value[]{0, 1, 2, 3};
+		SharedBuffer  Buffer = SharedBuffer::MakeView(MakeMemoryView(Value));
+		CbAttachment  Attachment(Buffer);
+		CHECK_FALSE(Attachment.IsNull());
+		CHECK(bool(Attachment));
+		CHECK(Attachment.AsBinaryView().GetView().EqualBytes(Buffer.GetView()));
+		CHECK_FALSE(Attachment.AsCompactBinary().HasValue());
+		CHECK(Attachment.IsBinary());
+		CHECK_FALSE(Attachment.IsCompactBinary());
+		CHECK(Attachment.GetHash() == IoHash::HashMemory(Buffer));
+	}
 
-	/** Add the attachment to this package. */
-	inline void AddAttachment(const CbAttachment& Attachment) { AddAttachment(Attachment, nullptr); }
+	SUBCASE("Compact Binary View")
+	{
+		CbWriter Writer;
+		Writer << "Name"sv << 42;
+		CbFieldIterator Fields	   = Writer.Save();
+		CbFieldIterator FieldsView = CbFieldIterator::MakeRangeView(CbFieldViewIterator(Fields));
+		CbAttachment	Attachment(FieldsView);
 
-	/** Add the attachment to this package, along with any references that can be resolved. */
-	inline void AddAttachment(const CbAttachment& Attachment, AttachmentResolver Resolver) { AddAttachment(Attachment, &Resolver); }
+		CHECK_FALSE(Attachment.IsNull());
+		CHECK(bool(Attachment));
 
-	/**
-	 * Remove an attachment by hash.
-	 *
-	 * @return Number of attachments removed, which will be either 0 or 1.
-	 */
-	ZENCORE_API int32_t RemoveAttachment(const IoHash& Hash);
-	inline int32_t		RemoveAttachment(const CbAttachment& Attachment) { return RemoveAttachment(Attachment.GetHash()); }
+		CHECK(Attachment.AsBinaryView() != FieldsView.GetRangeBuffer());
 
-	/** Compares packages by their object and attachment hashes. */
-	ZENCORE_API bool Equals(const CbPackage& Package) const;
-	inline bool		 operator==(const CbPackage& Package) const { return Equals(Package); }
-	inline bool		 operator!=(const CbPackage& Package) const { return !Equals(Package); }
+		CHECK(Attachment.AsCompactBinary().GetRangeView().EqualBytes(Fields.GetRangeView()));
+		CHECK(Attachment.IsBinary());
+		CHECK(Attachment.GetHash() == Fields.GetRangeHash());
+	}
 
-	/**
-	 * Load the object and attachments from compact binary as written by Save.
-	 *
-	 * The object and attachments reference the input iterator, if it is owned, and otherwise clones
-	 * the object and attachments individually to make owned copies.
-	 *
-	 * The iterator is advanced as object and attachment fields are consumed from it.
-	 */
-	ZENCORE_API void Load(CbFieldIterator& Fields);
+	SUBCASE("Binary Load from View")
+	{
+		const uint8_t	   Value[]{0, 1, 2, 3};
+		const SharedBuffer Buffer = SharedBuffer::MakeView(MakeMemoryView(Value));
+		CbAttachment	   Attachment(Buffer);
 
-	ZENCORE_API void Load(IoBuffer& Buffer, BufferAllocator Allocator = UniqueBuffer::Alloc);
+		CbWriter Writer;
+		Attachment.Save(Writer);
+		CbFieldIterator Fields	   = Writer.Save();
+		CbFieldIterator FieldsView = CbFieldIterator::MakeRangeView(CbFieldViewIterator(Fields));
+		Attachment.Load(FieldsView);
 
-	ZENCORE_API void Load(BinaryReader& Reader, BufferAllocator Allocator = UniqueBuffer::Alloc);
+		CHECK_FALSE(Attachment.IsNull());
+		CHECK(bool(Attachment));
+		CHECK_FALSE(FieldsView.GetRangeBuffer().GetView().Contains(Attachment.AsBinaryView().GetView()));
+		CHECK(Attachment.AsBinaryView().GetView().EqualBytes(Buffer.GetView()));
+		CHECK_FALSE(Attachment.AsCompactBinary().HasValue());
+		CHECK(Attachment.IsBinary());
+		CHECK_FALSE(Attachment.IsCompactBinary());
+		CHECK(Attachment.GetHash() == IoHash::HashMemory(MakeMemoryView(Value)));
+	}
 
-	/** Save the object and attachments into the writer as a stream of compact binary fields. */
-	ZENCORE_API void Save(CbWriter& Writer) const;
+	SUBCASE("Compact Binary Load from View")
+	{
+		CbWriter ValueWriter;
+		ValueWriter << "Name"sv << 42;
+		const CbFieldIterator Value = ValueWriter.Save();
 
-	/** Save the object and attachments into the writer as a stream of compact binary fields. */
-	ZENCORE_API void Save(BinaryWriter& Writer) const;
+		CHECK(ValidateCompactBinaryRange(Value.GetRangeView(), CbValidateMode::All) == CbValidateError::None);
+		CbAttachment Attachment(Value);
 
-private:
-	ZENCORE_API void SetObject(CbObject Object, const IoHash* Hash, AttachmentResolver* Resolver);
-	ZENCORE_API void AddAttachment(const CbAttachment& Attachment, AttachmentResolver* Resolver);
+		CbWriter Writer;
+		Attachment.Save(Writer);
+		CbFieldIterator Fields	   = Writer.Save();
+		CbFieldIterator FieldsView = CbFieldIterator::MakeRangeView(CbFieldViewIterator(Fields));
 
-	void GatherAttachments(const CbFieldViewIterator& Fields, AttachmentResolver Resolver);
+		Attachment.Load(FieldsView);
 
-	/** Attachments ordered by their hash. */
-	std::vector<CbAttachment> Attachments;
-	CbObject				  Object;
-	IoHash					  ObjectHash;
-};
+		CHECK_FALSE(Attachment.IsNull());
+		CHECK(bool(Attachment));
 
-void usonpackage_forcelink();  // internal
+		CHECK(Attachment.AsBinaryView().GetView().EqualBytes(Value.GetRangeView()));
+		CHECK_FALSE(FieldsView.GetRangeBuffer().GetView().Contains(Attachment.AsCompactBinary().GetRangeBuffer().GetView()));
+		CHECK(Attachment.IsBinary());
+		CHECK(Attachment.IsCompactBinary());
+
+		CHECK(Attachment.GetHash() == Value.GetRangeHash());
+	}
+
+	SUBCASE("Compact Binary Uniform Sub-View")
+	{
+		const SharedBuffer		  Buffer	  = SharedBuffer::Clone(MakeMemoryView<uint8_t>({0, 1, 2, 3}));
+		const CbFieldViewIterator FieldViews  = CbFieldViewIterator::MakeRange(Buffer.GetView().RightChop(2), CbFieldType::IntegerPositive);
+		const CbFieldIterator	  SavedFields = CbFieldIterator::CloneRange(FieldViews);
+		CbFieldIterator			  Fields	  = CbFieldIterator::MakeRangeView(FieldViews, Buffer);
+		CbAttachment			  Attachment(Fields);
+		const SharedBuffer		  Binary = Attachment.AsBinaryView();
+		CHECK(Attachment.AsCompactBinary() == Fields);
+		CHECK(Binary.GetSize() == SavedFields.GetRangeSize());
+		CHECK(Binary.GetView().EqualBytes(SavedFields.GetRangeView()));
+		CHECK(Attachment.GetHash() == SavedFields.GetRangeHash());
+		TestSaveLoadValidate("CompactBinaryUniformSubView", Attachment);
+	}
+
+	SUBCASE("Binary Null")
+	{
+		const CbAttachment Attachment(SharedBuffer{});
+
+		CHECK(Attachment.IsNull());
+		CHECK_FALSE(Attachment.IsBinary());
+		CHECK_FALSE(Attachment.IsCompactBinary());
+		CHECK(Attachment.GetHash() == IoHash::Zero);
+	}
+
+	SUBCASE("Binary Empty")
+	{
+		const CbAttachment Attachment(SharedBuffer(UniqueBuffer::Alloc(0)));
+
+		CHECK(Attachment.IsNull());
+		CHECK_FALSE(Attachment.IsBinary());
+		CHECK_FALSE(Attachment.IsCompactBinary());
+		CHECK(Attachment.GetHash() == IoHash::Zero);
+	}
+
+	SUBCASE("Compact Binary Empty")
+	{
+		const CbAttachment Attachment(CbFieldIterator{});
+
+		CHECK(Attachment.IsNull());
+		CHECK_FALSE(Attachment.IsBinary());
+		CHECK_FALSE(Attachment.IsCompactBinary());
+		CHECK(Attachment.GetHash() == IoHash::Zero);
+	}
+}
+
+TEST_CASE("usonpackage.serialization")
+{
+	using namespace std::literals;
+
+	const auto TestSaveLoadValidate = [&](const char* Test, const CbPackage& Package) {
+		ZEN_UNUSED(Test);
+
+		CbWriter Writer;
+		Package.Save(Writer);
+		CbFieldIterator Fields = Writer.Save();
+
+		MemoryOutStream MemStream;
+		BinaryWriter	WriteAr(MemStream);
+		Package.Save(WriteAr);
+
+		CHECK(MakeMemoryView(MemStream).EqualBytes(Fields.GetRangeBuffer().GetView()));
+		CHECK(ValidateCompactBinaryRange(MakeMemoryView(MemStream), CbValidateMode::All) == CbValidateError::None);
+		CHECK(ValidateCompactBinaryPackage(MakeMemoryView(MemStream), CbValidateMode::All) == CbValidateError::None);
+
+		CbPackage FromFields;
+		FromFields.Load(Fields);
+		CHECK_FALSE(bool(Fields));
+		CHECK(FromFields == Package);
+
+		CbPackage	   FromArchive;
+		MemoryInStream ReadMemStream(MakeMemoryView(MemStream));
+		BinaryReader   ReadAr(ReadMemStream);
+		FromArchive.Load(ReadAr);
+		CHECK(ReadAr.CurrentOffset() == ReadMemStream.Size());
+		CHECK(FromArchive == Package);
+	};
+
+	SUBCASE("Empty")
+	{
+		CbPackage Package;
+		CHECK(Package.IsNull());
+		CHECK_FALSE(bool(Package));
+		CHECK(Package.GetAttachments().size() == 0);
+		TestSaveLoadValidate("Empty", Package);
+	}
+
+	SUBCASE("Object Only")
+	{
+		CbWriter Writer;
+		Writer.BeginObject();
+		Writer << "Field" << 42;
+		Writer.EndObject();
+
+		const CbObject Object = Writer.Save().AsObject();
+		CbPackage	   Package(Object);
+		CHECK_FALSE(Package.IsNull());
+		CHECK(bool(Package));
+		CHECK(Package.GetAttachments().size() == 0);
+		CHECK(Package.GetObject().GetOuterBuffer() == Object.GetOuterBuffer());
+		CHECK(Package.GetObject()["Field"].AsInt32() == 42);
+		CHECK(Package.GetObjectHash() == Package.GetObject().GetHash());
+		TestSaveLoadValidate("Object", Package);
+	}
+
+	// Object View Only
+	{
+		CbWriter Writer;
+		Writer.BeginObject();
+		Writer << "Field" << 42;
+		Writer.EndObject();
+
+		const CbObject Object = Writer.Save().AsObject();
+		CbPackage	   Package(CbObject::MakeView(Object));
+		CHECK_FALSE(Package.IsNull());
+		CHECK(bool(Package));
+		CHECK(Package.GetAttachments().size() == 0);
+		CHECK(Package.GetObject().GetOuterBuffer() != Object.GetOuterBuffer());
+		CHECK(Package.GetObject()["Field"].AsInt32() == 42);
+		CHECK(Package.GetObjectHash() == Package.GetObject().GetHash());
+		TestSaveLoadValidate("Object", Package);
+	}
+
+	// Attachment Only
+	{
+		CbObject Object;
+		{
+			CbWriter Writer;
+			Writer.BeginObject();
+			Writer << "Field" << 42;
+			Writer.EndObject();
+			Object = Writer.Save().AsObject();
+		}
+		CbField Field = CbField::Clone(Object["Field"]);
+
+		CbPackage Package;
+		Package.AddAttachment(CbAttachment(CbFieldIterator::MakeSingle(Object.AsField())));
+		Package.AddAttachment(CbAttachment(Field.GetBuffer()));
+
+		CHECK_FALSE(Package.IsNull());
+		CHECK(bool(Package));
+		CHECK(Package.GetAttachments().size() == 2);
+		CHECK(Package.GetObject().Equals(CbObject()));
+		CHECK(Package.GetObjectHash() == IoHash());
+		TestSaveLoadValidate("Attachments", Package);
+
+		const CbAttachment* const ObjectAttachment = Package.FindAttachment(Object.GetHash());
+		REQUIRE(ObjectAttachment);
+
+		const CbAttachment* const FieldAttachment = Package.FindAttachment(Field.GetHash());
+		REQUIRE(FieldAttachment);
+
+		CHECK(ObjectAttachment->AsCompactBinary().AsObject().Equals(Object));
+		CHECK(FieldAttachment->AsBinaryView() == Field.GetBuffer());
+
+		Package.AddAttachment(CbAttachment(SharedBuffer::Clone(Object.GetView())));
+		Package.AddAttachment(CbAttachment(CbFieldIterator::CloneRange(CbFieldViewIterator::MakeSingle(Field))));
+
+		CHECK(Package.GetAttachments().size() == 2);
+		CHECK(Package.FindAttachment(Object.GetHash()) == ObjectAttachment);
+		CHECK(Package.FindAttachment(Field.GetHash()) == FieldAttachment);
+
+		CHECK(ObjectAttachment->AsCompactBinary().AsObject().Equals(Object));
+		CHECK(ObjectAttachment->AsBinaryView() == Object.GetBuffer());
+		CHECK(FieldAttachment->AsCompactBinary().Equals(Field));
+		CHECK(FieldAttachment->AsBinaryView() == Field.GetBuffer());
+
+		CHECK(std::is_sorted(begin(Package.GetAttachments()), end(Package.GetAttachments())));
+	}
+
+	// Shared Values
+	const uint8_t Level4Values[]{0, 1, 2, 3};
+	SharedBuffer  Level4	 = SharedBuffer::MakeView(MakeMemoryView(Level4Values));
+	const IoHash  Level4Hash = IoHash::HashMemory(Level4);
+
+	CbField Level3;
+	{
+		CbWriter Writer;
+		Writer.SetName("Level4").AddBinaryAttachment(Level4Hash);
+		Level3 = Writer.Save();
+	}
+	const IoHash Level3Hash = Level3.GetHash();
+
+	CbArray Level2;
+	{
+		CbWriter Writer;
+		Writer.SetName("Level3");
+		Writer.BeginArray();
+		Writer.AddCompactBinaryAttachment(Level3Hash);
+		Writer.EndArray();
+		Level2 = Writer.Save().AsArray();
+	}
+	const IoHash Level2Hash = Level2.AsFieldView().GetHash();
+
+	CbObject Level1;
+	{
+		CbWriter Writer;
+		Writer.BeginObject();
+		Writer.SetName("Level2").AddCompactBinaryAttachment(Level2Hash);
+		Writer.EndObject();
+		Level1 = Writer.Save().AsObject();
+	}
+	const IoHash Level1Hash = Level1.AsFieldView().GetHash();
+
+	const auto Resolver = [&Level2, &Level2Hash, &Level3, &Level3Hash, &Level4, &Level4Hash](const IoHash& Hash) -> SharedBuffer {
+		return Hash == Level2Hash	? Level2.GetBuffer()
+			   : Hash == Level3Hash ? Level3.GetBuffer()
+			   : Hash == Level4Hash ? Level4
+									: SharedBuffer();
+	};
+
+	// Object + Attachments
+	{
+		CbPackage Package;
+		Package.SetObject(Level1, Level1Hash, Resolver);
+
+		CHECK_FALSE(Package.IsNull());
+		CHECK(bool(Package));
+		CHECK(Package.GetAttachments().size() == 3);
+		CHECK(Package.GetObject().GetBuffer() == Level1.GetBuffer());
+		CHECK(Package.GetObjectHash() == Level1Hash);
+		TestSaveLoadValidate("Object+Attachments", Package);
+
+		const CbAttachment* const Level2Attachment = Package.FindAttachment(Level2Hash);
+		const CbAttachment* const Level3Attachment = Package.FindAttachment(Level3Hash);
+		const CbAttachment* const Level4Attachment = Package.FindAttachment(Level4Hash);
+		CHECK((Level2Attachment && Level2Attachment->AsCompactBinary().AsArray().Equals(Level2)));
+		CHECK((Level3Attachment && Level3Attachment->AsCompactBinary().Equals(Level3)));
+		CHECK((Level4Attachment && Level4Attachment->AsBinaryView() != Level4 &&
+			   Level4Attachment->AsBinaryView().GetView().EqualBytes(Level4.GetView())));
+
+		CHECK(std::is_sorted(begin(Package.GetAttachments()), end(Package.GetAttachments())));
+
+		const CbPackage PackageCopy = Package;
+		CHECK(PackageCopy == Package);
+
+		CHECK(Package.RemoveAttachment(Level1Hash) == 0);
+		CHECK(Package.RemoveAttachment(Level2Hash) == 1);
+		CHECK(Package.RemoveAttachment(Level3Hash) == 1);
+		CHECK(Package.RemoveAttachment(Level4Hash) == 1);
+		CHECK(Package.RemoveAttachment(Level4Hash) == 0);
+		CHECK(Package.GetAttachments().size() == 0);
+
+		CHECK(PackageCopy != Package);
+		Package = PackageCopy;
+		CHECK(PackageCopy == Package);
+		Package.SetObject(CbObject());
+		CHECK(PackageCopy != Package);
+		CHECK(Package.GetObjectHash() == IoHash());
+	}
+
+	// Out of Order
+	{
+		CbWriter Writer;
+		Writer.AddBinary(Level2.GetBuffer());
+		Writer.AddCompactBinaryAttachment(Level2Hash);
+		Writer.AddBinary(Level4);
+		Writer.AddBinaryAttachment(Level4Hash);
+		Writer.AddObject(Level1);
+		Writer.AddCompactBinaryAttachment(Level1Hash);
+		Writer.AddBinary(Level3.GetBuffer());
+		Writer.AddCompactBinaryAttachment(Level3Hash);
+		Writer.AddNull();
+
+		CbFieldIterator Fields = Writer.Save();
+		CbPackage		FromFields;
+		FromFields.Load(Fields);
+
+		const CbAttachment* const Level2Attachment = FromFields.FindAttachment(Level2Hash);
+		REQUIRE(Level2Attachment);
+		const CbAttachment* const Level3Attachment = FromFields.FindAttachment(Level3Hash);
+		REQUIRE(Level3Attachment);
+		const CbAttachment* const Level4Attachment = FromFields.FindAttachment(Level4Hash);
+		REQUIRE(Level4Attachment);
+
+		CHECK(FromFields.GetObject().Equals(Level1));
+		CHECK(FromFields.GetObject().GetOuterBuffer() == Fields.GetOuterBuffer());
+		CHECK(FromFields.GetObjectHash() == Level1Hash);
+
+		const MemoryView FieldsOuterBufferView = Fields.GetOuterBuffer().GetView();
+
+		CHECK(Level2Attachment->AsCompactBinary().AsArray().Equals(Level2));
+		CHECK(FieldsOuterBufferView.Contains(Level2Attachment->AsBinaryView().GetView()));
+		CHECK(Level2Attachment->GetHash() == Level2Hash);
+
+		CHECK(Level3Attachment->AsCompactBinary().Equals(Level3));
+		CHECK(FieldsOuterBufferView.Contains(Level3Attachment->AsBinaryView().GetView()));
+		CHECK(Level3Attachment->GetHash() == Level3Hash);
+
+		CHECK(Level4Attachment->AsBinaryView().GetView().EqualBytes(Level4.GetView()));
+		CHECK(FieldsOuterBufferView.Contains(Level4Attachment->AsBinaryView().GetView()));
+		CHECK(Level4Attachment->GetHash() == Level4Hash);
+
+		MemoryOutStream WriteStream;
+		BinaryWriter	WriteAr(WriteStream);
+		Writer.Save(WriteAr);
+		CbPackage	   FromArchive;
+		MemoryInStream ReadStream(MakeMemoryView(WriteStream));
+		BinaryReader   ReadAr(ReadStream);
+		FromArchive.Load(ReadAr);
+
+		Writer.Reset();
+		FromArchive.Save(Writer);
+		CbFieldIterator Saved = Writer.Save();
+		CHECK(Saved.AsObject().Equals(Level1));
+		++Saved;
+		CHECK(Saved.AsCompactBinaryAttachment() == Level1Hash);
+		++Saved;
+		CHECK(Saved.AsBinaryView().EqualBytes(Level2.GetView()));
+		++Saved;
+		CHECK(Saved.AsCompactBinaryAttachment() == Level2Hash);
+		++Saved;
+		CHECK(Saved.AsBinaryView().EqualBytes(Level3.GetView()));
+		++Saved;
+		CHECK(Saved.AsCompactBinaryAttachment() == Level3Hash);
+		++Saved;
+		CHECK(Saved.AsBinaryView().EqualBytes(Level4.GetView()));
+		++Saved;
+		CHECK(Saved.AsBinaryAttachment() == Level4Hash);
+		++Saved;
+		CHECK(Saved.IsNull());
+		++Saved;
+		CHECK(!Saved);
+	}
+
+	// Null Attachment
+	{
+		const CbAttachment NullAttachment;
+		CbPackage		   Package;
+		Package.AddAttachment(NullAttachment);
+		CHECK(Package.IsNull());
+		CHECK_FALSE(bool(Package));
+		CHECK(Package.GetAttachments().size() == 0);
+		CHECK_FALSE(Package.FindAttachment(NullAttachment));
+	}
+
+	// Resolve After Merge
+	{
+		bool	  bResolved = false;
+		CbPackage Package;
+		Package.AddAttachment(CbAttachment(Level3.GetBuffer()));
+		Package.AddAttachment(CbAttachment(CbFieldIterator::MakeSingle(Level3)), [&bResolved](const IoHash& Hash) -> SharedBuffer {
+			ZEN_UNUSED(Hash);
+			bResolved = true;
+			return SharedBuffer();
+		});
+		CHECK(bResolved);
+	}
+}
 
 }  // namespace zen
-
