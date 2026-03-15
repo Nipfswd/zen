@@ -589,5 +589,23 @@ FileSystemTraversal::TraverseFileSystem(const std::filesystem::path& RootDir, Tr
 	}
 }
 
+std::filesystem::path
+PathFromHandle(void* NativeHandle)
+{
+	if (NativeHandle == nullptr || NativeHandle == INVALID_HANDLE_VALUE)
+	{
+		return std::filesystem::path();
+	}
+
+	const DWORD RequiredLengthIncludingNul = GetFinalPathNameByHandleW(NativeHandle, nullptr, 0, FILE_NAME_OPENED);
+
+	std::wstring FullPath;
+	FullPath.resize(RequiredLengthIncludingNul - 1);
+
+	const DWORD FinalLength = GetFinalPathNameByHandleW(NativeHandle, FullPath.data(), RequiredLengthIncludingNul, FILE_NAME_OPENED);
+
+	return FullPath;
+}
+
 }  // namespace zen
 

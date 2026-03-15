@@ -29,6 +29,10 @@ ZENCORE_API bool CreateDirectories(const std::filesystem::path& dir);
 ZENCORE_API bool CleanDirectory(const wchar_t* dir);
 ZENCORE_API bool CleanDirectory(const std::filesystem::path& dir);
 
+/** Map native file handle to a path
+ */
+ZENCORE_API std::filesystem::path PathFromHandle(void* NativeHandle);
+
 struct FileContents
 {
 	std::vector<IoBuffer> Data;
